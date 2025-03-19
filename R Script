@@ -1,0 +1,201 @@
+  library(readr)
+  library(dplyr)
+  library(tidyr)
+  library(lubridate)
+  library(ggplot2)
+  library(plotly)
+  library(zoo)
+  library(forecast)
+  library(corrr)
+  
+  # Load the data
+  covid_data <- read.csv('C:/Users/wsi/Documents/COVID-19 time series dataset/time-series-19-covid-combined.csv')
+  
+  # Convert Date to Date format
+  covid_data$Date <- lubridate::ymd(covid_data$Date)
+  
+  # Check for missing values
+  missing_values <- colSums(is.na(covid_data))
+  print("Missing Values per Column:")
+  print(missing_values)
+  
+  # Handle missing values (Province.State)
+  covid_data$Province.State[is.na(covid_data$Province.State)] <- "" #Replace NA's in Province.State with empty string.
+  #check again for missing values.
+  missing_values <- colSums(is.na(covid_data))
+  print("Missing Values per Column after handling Province.State:")
+  print(missing_values)
+  
+  # Global Temporal Trends
+  
+  global_trends <- covid_data %>%
+    group_by(Date) %>%
+    summarise(
+      Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+      Total_Deaths = sum(Deaths, na.rm = TRUE),
+      Total_Recovered = sum(Recovered, na.rm = TRUE)
+    )
+  
+  # Plotting global trends
+  global_confirmed_plot <- ggplot(global_trends, aes(x = Date, y = Total_Confirmed)) +
+    geom_line(color = "blue") +
+    labs(title = "Global Confirmed COVID-19 Cases Over Time",
+         x = "Date",
+         y = "Total Confirmed Cases") +
+    theme_minimal()
+  
+  global_deaths_plot <- ggplot(global_trends, aes(x = Date, y = Total_Deaths)) +
+    geom_line(color = "red") +
+    labs(title = "Global COVID-19 Deaths Over Time",
+         x = "Date",
+         y = "Total Deaths") +
+    theme_minimal()
+  
+  global_recovered_plot <- ggplot(global_trends, aes(x = Date, y = Total_Recovered)) +
+    geom_line(color = "green") +
+    labs(title = "Global COVID-19 Recoveries Over Time",
+         x = "Date",
+         y = "Total Recovered Cases") +
+    theme_minimal()
+  
+  ggplotly(global_confirmed_plot)
+  ggplotly(global_deaths_plot)
+  ggplotly(global_recovered_plot)
+  
+  # Temporal Trends for a Specific Country
+  
+  country_trends <- covid_data %>%
+    filter(Country.Region == "Philippines") %>%
+    group_by(Date) %>%
+    summarise(
+      Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+      Total_Deaths = sum(Deaths, na.rm = TRUE),
+      Total_Recovered = sum(Recovered, na.rm = TRUE)
+    )
+  
+  # Plotting country trends
+  country_confirmed_plot <- ggplot(country_trends, aes(x = Date, y = Total_Confirmed)) +
+    geom_line(color = "blue") +
+    labs(title = "Philippine Confirmed COVID-19 Cases Over Time",
+         x = "Date",
+         y = "Total Confirmed Cases") +
+    theme_minimal()
+  
+  country_deaths_plot <- ggplot(country_trends, aes(x = Date, y = Total_Deaths)) +
+    geom_line(color = "red") +
+    labs(title = "Philippine COVID-19 Deaths Over Time",
+         x = "Date",
+         y = "Total Deaths") +
+    theme_minimal()
+  
+  country_recovered_plot <- ggplot(country_trends, aes(x = Date, y = Total_Recovered)) +
+    geom_line(color = "green") +
+    labs(title = "Philippine COVID-19 Recoveries Over Time",
+         x = "Date",
+         y = "Total Recovered Cases") +
+    theme_minimal()
+  
+  ggplotly(country_confirmed_plot)
+  ggplotly(country_deaths_plot)
+  ggplotly(country_recovered_plot)
+  
+    # Get the latest date
+  latest_date <- max(covid_data$Date)
+  
+  # Filter data for the latest date
+  latest_data_country <- covid_data %>%
+    filter(Date == latest_date) %>%
+    group_by(Country.Region) %>%
+    summarise(
+      Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+      Total_Deaths = sum(Deaths, na.rm = TRUE),
+      Total_Recovered = sum(Recovered, na.rm = TRUE)
+    ) %>%
+    arrange(desc(Total_Confirmed)) # Arrange by confirmed cases
+  
+  # Top 10 countries by confirmed cases (for bar plot)
+  top_10_countries <- latest_data_country %>%
+    top_n(10, Total_Confirmed)
+  
+  # Bar plot for confirmed cases
+  confirmed_bar_plot <- ggplot(top_10_countries, aes(x = reorder(Country.Region, Total_Confirmed), y = Total_Confirmed)) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    coord_flip() +
+    labs(title = paste("Top 10 Countries by Confirmed COVID-19 Cases (", latest_date, ")"),
+         x = "Country",
+         y = "Total Confirmed Cases") +
+    theme_minimal()
+  
+  ggplotly(confirmed_bar_plot)
+  
+  # Bar plot for deaths
+  deaths_bar_plot <- ggplot(top_10_countries, aes(x = reorder(Country.Region, Total_Deaths), y = Total_Deaths)) +
+    geom_bar(stat = "identity", fill = "salmon") +
+    coord_flip() +
+    labs(title = paste("Top 10 Countries by COVID-19 Deaths (", latest_date, ")"),
+         x = "Country",
+         y = "Total Deaths") +
+    theme_minimal()
+  
+  ggplotly(deaths_bar_plot)
+  
+  # Bar plot for recoveries
+  recovered_bar_plot <- ggplot(top_10_countries, aes(x = reorder(Country.Region, Total_Recovered), y = Total_Recovered)) +
+    geom_bar(stat = "identity", fill = "lightgreen") +
+    coord_flip() +
+    labs(title = paste("Top 10 Countries by COVID-19 Recoveries (", latest_date, ")"),
+         x = "Country",
+         y = "Total Recovered Cases") +
+    theme_minimal()
+  
+  ggplotly(recovered_bar_plot)
+  
+  # Global daily changes and growth rates
+  global_daily <- covid_data %>%
+    group_by(Date) %>%
+    summarise(
+      Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+      Total_Deaths = sum(Deaths, na.rm = TRUE),
+      Total_Recovered = sum(Recovered, na.rm = TRUE)
+    ) %>%
+    mutate(
+      New_Confirmed = Total_Confirmed - lag(Total_Confirmed, default = first(Total_Confirmed)),
+      New_Deaths = Total_Deaths - lag(Total_Deaths, default = first(Total_Deaths)),
+      New_Recovered = Total_Recovered - lag(Total_Recovered, default = first(Total_Recovered)),
+      Growth_Rate_Confirmed = (New_Confirmed / lag(Total_Confirmed, default = 1)) * 100
+    )
+  
+  # Identify Regions with Significant Increases/Decreases ---
+  
+  # Time series decomposition for Philippines
+  ph_data <- covid_data %>%
+    filter(Country.Region == "Philippines") %>%
+    group_by(Date) %>%
+    summarise(Total_Confirmed = sum(Confirmed, na.rm = TRUE))
+  
+  if (nrow(ph_data) > 0 && sum(ph_data$Total_Confirmed, na.rm = TRUE) > 0) {
+    ts_ph_confirmed <- ts(ph_data$Total_Confirmed, frequency = 7) # Assuming weekly seasonality
+    decomposed_ph <- decompose(ts_ph_confirmed)
+    plot(decomposed_ph) # View the trend, seasonal, and random components
+  } else {
+    print("No data to perform time series decomposition on the Philippines.")
+  }
+  
+  # Identifying regions with significant increase
+  # find the max daily increase for each country.
+  daily_increase_country <- covid_data %>% group_by(Country.Region, Date) %>% summarise(daily_confirmed = sum(Confirmed, na.rm=TRUE)) %>% group_by(Country.Region) %>% mutate(daily_increase = daily_confirmed - lag(daily_confirmed, default = first(daily_confirmed))) %>% group_by(Country.Region) %>% summarise(max_daily_increase = max(daily_increase, na.rm=TRUE)) %>% arrange(desc(max_daily_increase))
+  
+  print(head(daily_increase_country, 10)) # Top 10 countries with max daily increase.
+  
+    # Correlation between cases, deaths, and recoveries (global)
+  correlation_global <- covid_data %>%
+    group_by(Date) %>%
+    summarise(
+      Total_Confirmed = sum(Confirmed, na.rm = TRUE),
+      Total_Deaths = sum(Deaths, na.rm = TRUE),
+      Total_Recovered = sum(Recovered, na.rm = TRUE)
+    ) %>%
+    select(Total_Confirmed, Total_Deaths, Total_Recovered) %>%
+    correlate()
+  
+  print(correlation_global)
